@@ -502,4 +502,5 @@ ggplot(area_preds, aes(gr_liv_area, predicted_price)) +
     y = "Predicted Sale Price"
   ) +
   theme_minimal(base_size = 13)
+cat("The shape shows a sharp increase in predicted price from ~800 to ~1000 sq ft. Additional square footage adds little value afterwards.")
 ```
