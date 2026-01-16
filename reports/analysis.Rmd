@@ -1,30 +1,505 @@
 ---
-title: "Predicting House Prices with Tidymodels"
+title: "Predicting House Prices by Training Models in R"
 author: "Joshua Kohlmeyer"
-date: "2025-12-19"
 output: html_document
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(tidymodels)
+library(janitor)
+library(skimr)
+library(GGally)
+library(vip)
+library(xgboost)
+library(ranger)
+library(e1071)
+knitr::opts_chunk$set(warning = FALSE, message = FALSE)
+
+# Set seed for reproducibility
+set.seed(123)
+```
+# 1. Load the Data
+```{r}
+ames <- read_csv("../data/ames.csv") %>%
+clean_names()
+glimpse(ames)
+```
+# 2. Summary Statistics
+```{r}
+skim(ames)
+```
+# 3. Missing Values Overview
+```{r}
+ames %>% 
+summarise(across(everything(), ~sum(is.na(.)))) %>% 
+gather(variable, missing_count) %>% 
+arrange(desc(missing_count))
+```
+# 4. Key Numeric Distributions
+```{r}
+ames %>% 
+select(sale_price, gr_liv_area, total_bsmt_sf, garage_area, lot_area) %>%
+gather(variable, value) %>%
+ggplot(aes(value)) +
+geom_histogram(bins = 30) +
+facet_wrap(~ variable, scales = "free") +
+theme_minimal()
+
+
+```
+<div style="clear:both"></div>
+
+# 5. Pairwise Relationships
+```{r}
+ames %>%
+drop_na(sale_price, gr_liv_area, overall_qual, garage_area, year_built) %>%
+select(sale_price, gr_liv_area, overall_qual, garage_area, year_built) %>%
+ggpairs()
+```
+<div style="clear:both"></div>
+
+# 6. Data Cleaning & Feature Engineering
+```{r}
+ames_clean <- ames %>% 
+mutate(
+across(where(is.character), as.factor),
+fireplace_qu = fct_na_value_to_level(fireplace_qu, "None"),
+garage_qual  = fct_na_value_to_level(garage_qual, "None"),
+garage_type  = fct_na_value_to_level(garage_type, "None"),
+alley        = fct_na_value_to_level(alley, "None"),
+pool_qc      = fct_na_value_to_level(pool_qc, "None"),
+misc_feature = fct_na_value_to_level(misc_feature, "None")
+)
+```
+# 6.1 Remove Highly Skewed Outliers (Highly recommended by most ML textbooks I have come across)
+```{r}
+ames_clean <- ames_clean %>%
+filter(
+sale_price < quantile(sale_price, 0.99),  # remove top 1% price outliers
+gr_liv_area < 4000                        # common Ames rule: drop mega-houses
+)
+```
+# 6.2 Check Missing Values After Cleaning
+```{r}
+ames_clean %>% 
+summarise(across(everything(), ~sum(is.na(.)))) %>% 
+gather(variable, missing_count) %>% 
+filter(missing_count > 0) %>%
+arrange(desc(missing_count))
+```
+# 6.3 Train/Test Split
+```{r}
+data_split <- initial_split(ames_clean, prop = 0.8, strata = sale_price)
+train_data <- training(data_split)
+test_data  <- testing(data_split)
+
+train_data %>% head()
+train_model <- train_data %>%
+  mutate(log_sale_price = log(sale_price + 1)) %>%
+  select(-sale_price)
+
+test_model <- test_data %>%
+  mutate(log_sale_price = log(sale_price + 1)) %>%
+  select(-sale_price)
+```
+# 7. Feature Engineering Recipe (Tidymodels)
+```{r}
+numeric_vars <- train_data %>%
+  select(where(is.numeric)) %>%
+  select(-sale_price) %>% 
+  pivot_longer(everything(), names_to = "var", values_to = "value") %>%
+  group_by(var) %>%
+  summarise(skew = abs(skewness(value, na.rm = TRUE)), .groups = "drop") %>%
+  filter(skew > 1) %>%
+  pull(var)
+
+numeric_vars
+```
+# 7.1 Build the Recipe
+```{r}
+ames_recipe <- recipe(log_sale_price ~ ., data = train_model) %>%
+
+  # Imputation
+  step_impute_median(all_numeric_predictors()) %>%
+  step_impute_mode(all_nominal_predictors()) %>%
+
+  # Log-transform skewed predictors
+  step_log(all_of(numeric_vars), offset = 1e-6) %>%
+
+  # Encoding
+  step_dummy(all_nominal_predictors()) %>%
+
+  # Cleanup
+  step_zv(all_predictors()) %>%
+  step_lincomb(all_predictors()) %>%
+  step_corr(all_numeric_predictors(), threshold = 0.9) %>%
+  step_normalize(all_numeric_predictors())
+```
+# 7.2 Prep the Recipe
+```{r}
+ames_prep <- prep(ames_recipe)
+train_processed <- bake(ames_prep, new_data = NULL)
+test_processed <- bake(ames_prep, new_data = test_model)
+train_processed %>% head()
+```
+# 8. Model Training
+```{r}
+folds <- vfold_cv(train_model, v = 5)
+```
+# 9. Linear Regression Model
+```{r}
+lin_mod <- linear_reg() %>%
+set_engine("lm")
+lin_wf <- workflow() %>%
+  add_model(lin_mod) %>%
+  add_recipe(ames_recipe)
+
+lin_res <- fit_resamples(
+  lin_wf,
+  folds,
+  metrics = metric_set(rmse, rsq),
+  control = control_resamples(save_pred = TRUE)
+)
+collect_metrics(lin_res)
+```
+# 10. Random Forest Model 
+```{r}
+# 10.1 RF model specification
+rf_mod <- rand_forest(
+mtry  = tune(),
+trees = 800,
+min_n = tune()
+) %>%
+set_engine("ranger") %>%
+set_mode("regression")
+
+# 10.2 Workflow
+rf_wf <- workflow() %>%
+add_model(rf_mod) %>%
+add_recipe(ames_recipe)
+
+# 10.3 RF hyperparameter grid
+rf_grid <- grid_regular(
+mtry(range = c(5, 15)),
+min_n(range = c(2, 20)),
+levels = 5
+)
+
+# 10.4 Tune with CV
+rf_res <- tune_grid(
+rf_wf,
+resamples = folds,
+grid = rf_grid,
+metrics = metric_set(rmse, rsq),
+control = control_grid(save_pred = TRUE)
+)
+rf_res
+```
+# 11. Select best RF model
+```{r}
+rf_best <- select_best(rf_res, metric = "rmse")
+
+rf_final_wf <- finalize_workflow(rf_wf, rf_best)
+
+rf_final_fit <- fit(rf_final_wf, data = train_model)
+
+rf_test_preds <- predict(
+  rf_final_fit,
+  new_data = test_model
+) %>%
+  mutate(
+    sale_price = test_data$sale_price,
+    .pred = exp(.pred) - 1
+  )
+
+rf_metrics <- rf_test_preds %>%
+  metrics(truth = sale_price, estimate = .pred)
+
+rf_metrics
+```
+# 12. XGBoost Model
+```{r part12-xgboost}
+
+library(xgboost)
+
+# 12.1 Model specification
+xgb_mod <- boost_tree(
+  trees = tune(),
+  learn_rate = tune(),
+  mtry = tune(),
+  tree_depth = tune(),
+  loss_reduction = tune(),
+  min_n = tune()
+) %>%
+  set_engine("xgboost") %>%
+  set_mode("regression")
+
+# 12.2 Workflow
+xgb_wf <- workflow() %>%
+  add_recipe(ames_recipe) %>%
+  add_model(xgb_mod)
+
+# 12.3 Improved tuning grid
+xgb_grid <- grid_space_filling(
+  trees(range = c(500, 1500)),
+  learn_rate(range = c(0.05, 0.3)),
+  mtry(range = c(10, 40)),
+  tree_depth(range = c(4, 10)),
+  loss_reduction(range = c(0, 5)),
+  min_n(range = c(5, 30)),
+  size = 20
+)
+
+# 12.4 Tune with cross-validation
+set.seed(123)
+xgb_res <- tune_grid(
+  xgb_wf,
+  resamples = folds,
+  grid = xgb_grid,
+  metrics = metric_set(rmse, rsq),
+  control = control_grid(
+    save_pred = TRUE,
+    verbose = FALSE
+  )
+)
+xgb_res
+```
+# 13. Select Best XGBoost Model
+```{r}
+xgb_best <- select_best(xgb_res, metric = "rmse")
+
+xgb_final_wf <- finalize_workflow(xgb_wf, xgb_best)
+
+xgb_final_fit <- fit(xgb_final_wf, data = train_model)
+
+xgb_test_preds <- predict(
+  xgb_final_fit,
+  new_data = test_model
+) %>%
+  mutate(
+    sale_price = test_data$sale_price,
+    .pred = exp(.pred) - 1
+  )
+
+xgb_metrics <- xgb_test_preds %>%
+  metrics(truth = sale_price, estimate = .pred)
+
+xgb_metrics
+```
+# 14. Model Comparison Table (Linear vs RF vs XGB)
+```{r}
+model_comparison <- bind_rows(
+  lin_res %>%
+    collect_metrics() %>%
+    filter(.metric == "rmse") %>%
+    mutate(model = "Linear Regression"),
+  
+  rf_res %>%
+    collect_metrics() %>%
+    filter(.metric == "rmse") %>%
+    mutate(model = "Random Forest"),
+  
+  xgb_res %>%
+    collect_metrics() %>%
+    filter(.metric == "rmse") %>%
+    mutate(model = "XGBoost")
+) %>%
+  select(model, mean, std_err) %>%
+  arrange(mean)
+
+model_comparison
+```
+# 15. Cross-Validation RMSE Plot (All Models)
+```{r}
+library(ggplot2)
+
+cv_results <- bind_rows(
+  lin_res %>% collect_metrics() %>% filter(.metric == "rmse") %>% mutate(model = "Linear"),
+  rf_res  %>% collect_metrics() %>% filter(.metric == "rmse") %>% mutate(model = "Random Forest"),
+  xgb_res %>% collect_metrics() %>% filter(.metric == "rmse") %>% mutate(model = "XGBoost")
+)
+
+ggplot(cv_results, aes(x = model, y = mean, fill = model)) +
+  geom_col(width = 0.6) +
+  scale_fill_manual(
+    values = c(
+      "Linear" = "#4C72B0",
+      "Random Forest" = "#55A868",
+      "XGBoost" = "#C44E52"
+    )
+  ) +
+  labs(
+    title = "Cross-Validation RMSE Comparison (Log Sale Price)",
+    x = "",
+    y = "RMSE"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(legend.position = "none")
+```
+<div style="clear:both"></div>
+
+# 16. Final Test-Set Predictions Plot
+```{r}
+ggplot(xgb_test_preds, aes(x = sale_price, y = .pred)) +
+  geom_point(alpha = 0.4, color = "#4C72B0") +
+  geom_abline(slope = 1, intercept = 0,
+              linetype = "dashed",
+              color = "#C44E52") +
+  labs(
+    title = "XGBoost Predictions vs Actual Sale Price",
+    x = "Actual Sale Price",
+    y = "Predicted Sale Price"
+  ) +
+  theme_minimal(base_size = 13)
+```
+<div style="clear:both"></div>
+
+# 17. Residual Diagnostics (XGBoost) - Residuals are the standard way to show model fit quality
+```{r}
+xgb_test_preds <- xgb_test_preds %>%
+  mutate(residual = sale_price - .pred)
+
+ggplot(xgb_test_preds, aes(x = .pred, y = residual)) +
+  geom_point(alpha = 0.35, color = "#55A868") +
+  geom_hline(yintercept = 0,
+             linetype = "dashed",
+             color = "#C44E52") +
+  labs(
+    title = "Residuals vs Predicted Values (XGBoost)",
+    x = "Predicted Sale Price",
+    y = "Residuals"
+  ) +
+  theme_minimal(base_size = 13)
+```
+<div style="clear:both"></div>
+
+# 18. Distribution of Prediction Errors - Standard check for error symmetry, well-behaviour, and not wild skewness
+```{r}
+ggplot(xgb_test_preds, aes(residual)) +
+  geom_histogram(bins = 30,
+                 fill = "#4C72B0",
+                 alpha = 0.85) +
+  labs(
+    title = "Distribution of Prediction Errors (XGBoost)",
+    x = "Prediction Error",
+    y = "Count"
+  ) +
+  theme_minimal(base_size = 13)
+```
+<div style="clear:both"></div>
+
+# 19: Real-Life Impact of Price Predictions
+# Among the models, XGBoost demonstrated the strongest predictive performance on the test set. The XGBoost model is very accurate in predicting actual house prices:
+
+```{r part20-business-value, message=FALSE, warning=FALSE}
+# Add prediction errors
+xgb_test_preds <- xgb_test_preds %>%
+  mutate(
+    error = abs(.pred - sale_price),
+    pct_error = abs(.pred - sale_price) / sale_price * 100,
+    underpriced = .pred > sale_price,
+    potential_gain = if_else(underpriced, .pred - sale_price, 0)
+  )
+
+# 1. Model R² report
+
+rsq_value <- rsq(xgb_test_preds, truth = sale_price, estimate = .pred)$.estimate
+rsq_value
+cat("The XGBoost model achieves an R² of", round(rsq_value, 3), "on the test set, indicating strong predictive performance.\n")
+
+# 2. Plot predicted vs actual prices
+
+ggplot(xgb_test_preds, aes(x=.pred, y=sale_price)) +
+  geom_point(alpha=0.5, color="blue") +
+  geom_abline(slope=1, intercept=0, color='red', linetype="dashed") +
+  labs(
+    title="Predicted vs Actual Sale Price",
+    x="Predicted Price",
+    y="Actual Sale Price"
+  ) +
+  theme_minimal()
+```
+<div style="clear:both"></div>
+
+# 20. Real-World Prediction Example:
+```{r}
+# This simulates a real client scenario, where a new house is defined and the predictive model predicts its market value based on the data it trained on.
+new_house <- test_data[1, ] %>%
+  mutate(
+    lot_area = 8500,
+    gr_liv_area = 1800,
+    overall_qual = 7,
+    overall_cond = 5,
+    year_built = 2005,
+    garage_area = 450,
+    total_bsmt_sf = 900,
+    neighborhood = "NridgHt",
+    house_style = "2Story",
+    bldg_type = "1Fam",
+    foundation = "PConc"
+  ) %>%
+  select(-sale_price)
+
+new_house_pred <- predict(
+  xgb_final_fit,
+  new_data = new_house
+) %>%
+  mutate(predicted_price = exp(.pred) - 1)
+new_house_pred
 ```
 
-## R Markdown
-
-This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
-
-When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
-
-```{r cars}
-summary(cars)
+# 21. Feature Importance: What actually drives price?
+```{r}
+vip(
+  xgb_final_fit,
+  num_features = 15,
+  geom = "col",
+  aesthetics = list(fill = "#4C72B0")
+) +
+  labs(
+    title = "Top 15 Important Features in House Price Prediction",
+    x = "Importance",
+    y = ""
+  ) +
+  theme_minimal(base_size = 13)
 ```
+<div style="clear:both"></div>
 
-## Including Plots
+# 22. Sensitivity Analysis: Living Area vs Price
+```{r}
+template_house <- test_data[1, ] %>%
+  select(-sale_price)
 
-You can also embed plots, for example:
+area_grid <- template_house[rep(1, 23), ] %>%
+  mutate(
+    gr_liv_area = seq(800, 3000, by = 100),
+    lot_area = 8500,
+    overall_qual = 7,
+    overall_cond = 5,
+    year_built = 2005,
+    garage_area = 450,
+    total_bsmt_sf = 900,
+    neighborhood = "NridgHt",
+    house_style = "2Story",
+    bldg_type = "1Fam",
+    foundation = "PConc"
+  )
 
-```{r pressure, echo=FALSE}
-plot(pressure)
+area_preds <- predict(
+  xgb_final_fit,
+  new_data = area_grid
+) %>%
+  mutate(predicted_price = exp(.pred) - 1) %>%
+  bind_cols(area_grid)
+
+ggplot(area_preds, aes(gr_liv_area, predicted_price)) +
+  geom_point(alpha = 0.4) +
+  geom_line(linewidth = 1.2) +
+  labs(
+    title = "Effect of Living Area on Predicted House Price",
+    x = "Above-Ground Living Area (sq ft)",
+    y = "Predicted Sale Price"
+  ) +
+  theme_minimal(base_size = 13)
 ```
-
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
