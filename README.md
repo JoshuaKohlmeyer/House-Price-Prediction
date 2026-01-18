@@ -21,7 +21,8 @@ This project was done to strengthen my applied skills in **R**, **machine learni
 
 ## Dataset
 
-- **Dataset**: Ames Housing Dataset  
+- **Dataset**: Ames Housing Dataset
+  ![Data Summary](screenshots/data_summary.png)
 - **Source**: https://www.kaggle.com/datasets/prevek18/ames-housing-dataset  
 - **Description**: Detailed information on residential properties in Ames, Iowa.  
   House prices are in US dollars ($) and measurements are in feet (ft).  
@@ -89,24 +90,12 @@ Each model was trained using cross validation and evaluated consistently to ensu
 
 - The **XGBoost model** achieved the strongest performance
 - Test set **R squared ≈ 0.81**
+  ![Strong predictive performance](screenshots/strong_performance.png)
 - The model explains about **81 percent** of the variation in house prices
 - Prediction plots show strong alignment between actual and predicted prices
 - Residual diagnostics indicate a well behaved model with no major systematic issues
 
 Overall, the final model performs very well and produces realistic price estimates.
-
----
-
-## Practical Application
-
-This project demonstrates how a trained machine learning model can be used to:
-
-- Predict the market value of a house based on its features
-- Understand how changes in inputs affect price
-- Support pricing decisions in a real estate context
-- Translate statistical models into actionable insights
-
-The same workflow can be applied to many real world prediction problems beyond housing data.
 
 ---
 
@@ -126,6 +115,19 @@ The same workflow can be applied to many real world prediction problems beyond h
 
 ### Feature Importance
 ![Feature Importance](screenshots/feature_importance.png)
+
+---
+
+## Practical Application
+
+This project demonstrates how a trained machine learning model can be used to:
+
+- Predict the market value of a house based on its features
+- Understand how changes in inputs affect price
+- Support pricing decisions in a real estate context
+- Translate statistical models into actionable insights
+
+The same workflow can be applied to many real world prediction problems beyond housing data.
 
 ---
 
@@ -157,6 +159,7 @@ If you would like to connect or give feedback on this project (much appreciated)
 - GitHub: https://github.com/JoshuaKohlmeyer
 
 ##
+
 
 
 
