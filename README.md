@@ -22,7 +22,9 @@ This project was done to strengthen my applied skills in **R**, **machine learni
 ## Dataset
 
 - **Dataset**: Ames Housing Dataset
-  ![Data Summary](screenshots/data_summary.png)
+
+![Data Summary](screenshots/data_summary.png)
+
 - **Source**: https://www.kaggle.com/datasets/prevek18/ames-housing-dataset  
 - **Description**: Detailed information on residential properties in Ames, Iowa.  
   House prices are in US dollars ($) and measurements are in feet (ft).  
@@ -90,7 +92,7 @@ Each model was trained using cross validation and evaluated consistently to ensu
 
 - The **XGBoost model** achieved the strongest performance
 - Test set **R squared ≈ 0.81**
-  ![Strong predictive performance](screenshots/strong_performance.png)
+![Strong predictive performance](screenshots/strong_performance.png)
 - The model explains about **81 percent** of the variation in house prices
 - Prediction plots show strong alignment between actual and predicted prices
 - Residual diagnostics indicate a well behaved model with no major systematic issues
@@ -159,6 +161,7 @@ If you would like to connect or give feedback on this project (much appreciated)
 - GitHub: https://github.com/JoshuaKohlmeyer
 
 ##
+
 
 
 
