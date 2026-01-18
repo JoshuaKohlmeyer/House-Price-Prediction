@@ -103,17 +103,20 @@ Overall, the final model performs very well and produces realistic price estimat
 
 ## Visual Highlights
 
+Below are selected outputs from the final HTML report that demonstrate model performance and interpretability.
+
 ### Log-Transformed Target Variables
 ![Log Price Distribution](screenshots/log_price_distribution.png)
-
-### Model Performance Comparison
-![Model Comparison](screenshots/model_comparison.png)
 
 ### Actual vs Predicted Prices (XGBoost)
 ![Actual vs Predicted](screenshots/actual_vs_predicted.png)
 
+*Predicted vs actual sale prices for the XGBoost model.*
+
 ### Residual Diagnostics
 ![Residuals](screenshots/residuals.png)
+
+*Residual diagnostics showing no major systematic patterns.*
 
 ### Feature Importance
 ![Feature Importance](screenshots/feature_importance.png)
@@ -149,7 +152,7 @@ The same workflow can be applied to many real world prediction problems beyond h
 
 ### Reporting and Reproducibility
 - **RMarkdown**
-
+All results are fully reproducible. The project can be rerun end to end by knitting the RMarkdown file.
 ---
 
 ## Contact
@@ -161,6 +164,7 @@ If you would like to connect or give feedback on this project (much appreciated)
 - GitHub: https://github.com/JoshuaKohlmeyer
 
 ##
+
 
 
 
