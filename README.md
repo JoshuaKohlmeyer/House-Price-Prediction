@@ -112,7 +112,7 @@ The same workflow can be applied to many real world prediction problems beyond h
 
 ## Visual Highlights
 
-### Log-Transformed Target Variable (House Prices)
+### Log-Transformed Target Variables
 ![Log Price Distribution](screenshots/log_price_distribution.png)
 
 ### Model Performance Comparison
@@ -157,5 +157,6 @@ If you would like to connect or give feedback on this project (much appreciated)
 - GitHub: https://github.com/JoshuaKohlmeyer
 
 ##
+
 
 
