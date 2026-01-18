@@ -110,12 +110,22 @@ The same workflow can be applied to many real world prediction problems beyond h
 
 ---
 
-## Visual Highlights
+## 📸 Visual Highlights
 
-- Predictions vs Actual Sale Price plot
-- Residual diagnostics plot
-- Model comparison table
-- Feature importance visualization
+### Log-Transformed Target Variable (House Prices)
+![Log Price Distribution](screenshots/log_price_distribution.png)
+
+### Model Performance Comparison
+![Model Comparison](screenshots/model_comparison.png)
+
+### Actual vs Predicted Prices (XGBoost)
+![Actual vs Predicted](screenshots/actual_vs_predicted.png)
+
+### Residual Diagnostics
+![Residuals](screenshots/residuals.png)
+
+### Feature Importance
+![Feature Importance](screenshots/feature_importance.png)
 
 ---
 
@@ -147,3 +157,4 @@ If you would like to connect or give feedback on this project (much appreciated)
 - GitHub: https://github.com/JoshuaKohlmeyer
 
 ##
+
