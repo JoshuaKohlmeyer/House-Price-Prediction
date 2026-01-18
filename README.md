@@ -152,7 +152,7 @@ The same workflow can be applied to many real world prediction problems beyond h
 
 ### Reporting and Reproducibility
 - **RMarkdown**
-All results are fully reproducible. The project can be rerun end to end by knitting the RMarkdown file.
+(All results are fully reproducible. The project can be rerun end to end by knitting the RMarkdown file.)
 ---
 
 ## Contact
@@ -164,6 +164,7 @@ If you would like to connect or give feedback on this project (much appreciated)
 - GitHub: https://github.com/JoshuaKohlmeyer
 
 ##
+
 
 
 
